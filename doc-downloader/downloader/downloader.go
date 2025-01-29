@@ -9,9 +9,9 @@ import (
 	"github.com/playwright-community/playwright-go"
 )
 
-// DownloadWithPlaywright downloads the page using Playwright, waits for it to be fully rendered,
-// and then saves the HTML content.
-func DownloadWithPlaywright(url, outputDir string, browser *playwright.Browser, wg *sync.WaitGroup) {
+// DownloadAndConvertToPDF downloads the page using Playwright, waits for it to be fully rendered,
+// saves the HTML content, and converts it to PDF.
+func DownloadAndConvertToPDF(url, outputDir string, browser *playwright.Browser, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	page, err := (*browser).NewPage()
@@ -28,6 +28,7 @@ func DownloadWithPlaywright(url, outputDir string, browser *playwright.Browser, 
 		return
 	}
 
+	// Get the HTML content after JavaScript execution
 	htmlContent, err := page.Content()
 	if err != nil {
 		fmt.Println("Failed to get page content:", err)
@@ -42,31 +43,16 @@ func DownloadWithPlaywright(url, outputDir string, browser *playwright.Browser, 
 		return
 	}
 	fmt.Println("Downloaded (HTML):", url)
-}
 
-// ConvertToPDF converts the HTML to a PDF using Playwright
-func ConvertToPDF(htmlFilePath, pdfFilePath string, browser *playwright.Browser) error {
-	page, err := (*browser).NewPage()
-	if err != nil {
-		return fmt.Errorf("failed to create page: %v", err)
-	}
-	defer page.Close()
-
-	// Use file:// protocol to open the local HTML file
-	if _, err = page.Goto("file://"+htmlFilePath, playwright.PageGotoOptions{
-		WaitUntil: playwright.WaitUntilStateNetworkidle,
-	}); err != nil {
-		return fmt.Errorf("failed to open HTML file: %v", err)
-	}
-
+	// Convert to PDF (using Playwright)
+	pdfFilePath := utils.GetFilePath(outputDir, url, ".pdf")
 	_, err = page.PDF(playwright.PagePdfOptions{
 		Path:   playwright.String(pdfFilePath),
 		Format: playwright.String("A4"),
 	})
 	if err != nil {
-		return fmt.Errorf("failed to generate PDF: %v", err)
+		fmt.Println("Failed to generate PDF:", err)
+		return
 	}
-
-	fmt.Println("Converted to PDF:", pdfFilePath)
-	return nil
+	fmt.Println("Converted to PDF:", url)
 }

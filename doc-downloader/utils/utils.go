@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -49,4 +50,21 @@ func GetFilePath(outputDir, rawURL, extension string) string {
 func GetBaseHostname(rawURL string) string {
 	parsedURL, _ := url.Parse(rawURL)
 	return parsedURL.Hostname()
+}
+
+// ListPDFFiles returns a list of all PDF files in a directory.
+func ListPDFFiles(dir string) ([]string, error) {
+	var pdfFiles []string
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, file := range files {
+		if !file.IsDir() && filepath.Ext(file.Name()) == ".pdf" {
+			pdfFiles = append(pdfFiles, filepath.Join(dir, file.Name()))
+		}
+	}
+
+	return pdfFiles, nil
 }

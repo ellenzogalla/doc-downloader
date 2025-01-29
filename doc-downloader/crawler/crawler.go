@@ -57,7 +57,7 @@ func New(targetURL, outputDir string, wg *sync.WaitGroup, browsers chan *playwri
 		c.wg.Add(1)
 		browser := <-c.browsers // Get a browser from the pool
 		go func(urlStr string) {
-			downloader.DownloadWithPlaywright(urlStr, c.outputDir, browser, c.wg)
+			downloader.DownloadAndConvertToPDF(urlStr, c.outputDir, browser, c.wg)
 			c.browsers <- browser // Return browser to the pool
 		}(r.URL.String())
 	})
