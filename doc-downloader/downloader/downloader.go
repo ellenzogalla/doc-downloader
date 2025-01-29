@@ -1,58 +1,27 @@
 package downloader
 
 import (
-	"fmt"
-	"os"
-	"sync"
-
-	"github.com/ellenzogalla/doc-downloader.git/utils"
-	"github.com/playwright-community/playwright-go"
+	"io/ioutil"
+	"net/http"
 )
 
-// DownloadAndConvertToPDF downloads the page using Playwright, waits for it to be fully rendered,
-// saves the HTML content, and converts it to PDF.
-func DownloadAndConvertToPDF(url, outputDir string, browser *playwright.Browser, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	page, err := (*browser).NewPage()
+// Download fetches the content of a URL.
+func Download(url string) ([]byte, error) {
+	resp, err := http.Get(url)
 	if err != nil {
-		fmt.Println("Failed to create page:", err)
-		return
+		return nil, err
 	}
-	defer page.Close()
+	defer resp.Body.Close()
 
-	if _, err = page.Goto(url, playwright.PageGotoOptions{
-		WaitUntil: playwright.WaitUntilStateNetworkidle,
-	}); err != nil {
-		fmt.Println("Failed to goto:", err)
-		return
-	}
-
-	// Get the HTML content after JavaScript execution
-	htmlContent, err := page.Content()
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("Failed to get page content:", err)
-		return
+		return nil, err
 	}
 
-	// Save HTML
-	htmlFilePath := utils.GetFilePath(outputDir, url, ".html")
-	err = os.WriteFile(htmlFilePath, []byte(htmlContent), 0644)
-	if err != nil {
-		fmt.Println("Failed to save HTML:", err)
-		return
-	}
-	fmt.Println("Downloaded (HTML):", url)
+	return body, nil
+}
 
-	// Convert to PDF (using Playwright)
-	pdfFilePath := utils.GetFilePath(outputDir, url, ".pdf")
-	_, err = page.PDF(playwright.PagePdfOptions{
-		Path:   playwright.String(pdfFilePath),
-		Format: playwright.String("A4"),
-	})
-	if err != nil {
-		fmt.Println("Failed to generate PDF:", err)
-		return
-	}
-	fmt.Println("Converted to PDF:", url)
+// Save writes the content to a file.
+func Save(content []byte, filePath string) error {
+	return ioutil.WriteFile(filePath, content, 0644)
 }
