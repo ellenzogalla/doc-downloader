@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/ellenzogalla/doc-downloader.git/crawler"
-
+	"github.com/ellenzogalla/doc-downloader.git/downloader"
+	"github.com/ellenzogalla/doc-downloader.git/merger"
 	"github.com/playwright-community/playwright-go"
 )
 
@@ -51,7 +53,22 @@ func main() {
 	c := crawler.New(*targetURL, *outputDir, &wg, browsers)
 	c.Crawl()
 
-	// Wait for all tasks to complete
+	// Wait for all downloads to complete
 	wg.Wait()
-	fmt.Println("Documentation download and conversion complete.")
+
+	// Merge HTML files into a single file
+	mergedHTMLPath, err := merger.MergeHTMLFiles(*outputDir, "merged.html")
+	if err != nil {
+		log.Fatalf("Error merging HTML files: %v", err)
+	}
+
+	// Convert the merged HTML to a single PDF
+	browser := <-browsers
+	pdfPath := filepath.Join(*outputDir, "final.pdf")
+	err = downloader.ConvertToPDF(mergedHTMLPath, pdfPath, browser)
+	if err != nil {
+		log.Fatalf("Error converting to PDF: %v", err)
+	}
+
+	fmt.Println("Documentation downloaded and converted to a single PDF:", pdfPath)
 }

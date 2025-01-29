@@ -10,7 +10,7 @@ import (
 )
 
 // DownloadWithPlaywright downloads the page using Playwright, waits for it to be fully rendered,
-// and then saves the HTML content and converts it to PDF.
+// and then saves the HTML content.
 func DownloadWithPlaywright(url, outputDir string, browser *playwright.Browser, wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -42,16 +42,31 @@ func DownloadWithPlaywright(url, outputDir string, browser *playwright.Browser, 
 		return
 	}
 	fmt.Println("Downloaded (HTML):", url)
+}
 
-	// Convert to PDF (using Playwright)
-	pdfFilePath := utils.GetFilePath(outputDir, url, ".pdf")
+// ConvertToPDF converts the HTML to a PDF using Playwright
+func ConvertToPDF(htmlFilePath, pdfFilePath string, browser *playwright.Browser) error {
+	page, err := (*browser).NewPage()
+	if err != nil {
+		return fmt.Errorf("failed to create page: %v", err)
+	}
+	defer page.Close()
+
+	// Use file:// protocol to open the local HTML file
+	if _, err = page.Goto("file://"+htmlFilePath, playwright.PageGotoOptions{
+		WaitUntil: playwright.WaitUntilStateNetworkidle,
+	}); err != nil {
+		return fmt.Errorf("failed to open HTML file: %v", err)
+	}
+
 	_, err = page.PDF(playwright.PagePdfOptions{
 		Path:   playwright.String(pdfFilePath),
 		Format: playwright.String("A4"),
 	})
 	if err != nil {
-		fmt.Println("Failed to generate PDF:", err)
-		return
+		return fmt.Errorf("failed to generate PDF: %v", err)
 	}
-	fmt.Println("Converted to PDF:", url)
+
+	fmt.Println("Converted to PDF:", pdfFilePath)
+	return nil
 }
