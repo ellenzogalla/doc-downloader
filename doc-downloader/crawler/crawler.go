@@ -58,8 +58,8 @@ func New(targetURL, outputDir string, wg *sync.WaitGroup, browsers chan *playwri
 		c.wg.Add(1)
 		browser := <-c.browsers // Get a browser from the pool
 		go func(urlStr string) {
-			downloader.DownloadHTMLWithInlineStyles(urlStr, c.outputDir, browser, c.wg) // Corrected function name
-			c.browsers <- browser                                                       // Return browser to the pool
+			downloader.DownloadHTMLWithInlineStyles(urlStr, c.outputDir, browser, c.wg)
+			c.browsers <- browser // Return browser to the pool
 		}(r.URL.String())
 	})
 

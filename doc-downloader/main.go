@@ -5,117 +5,74 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
-	"time"
 
-	"github.com/ellenzogalla/doc-downloader.git/converter"
+	"github.com/ellenzogalla/doc-downloader.git/crawler"
 	"github.com/ellenzogalla/doc-downloader.git/downloader"
-	"github.com/ellenzogalla/doc-downloader.git/queue"
-	"github.com/ellenzogalla/doc-downloader.git/utils"
+
+	"github.com/playwright-community/playwright-go"
 )
 
 func main() {
 	// Command-line flags
 	targetURL := flag.String("url", "", "The base URL of the documentation website")
 	outputDir := flag.String("out", "output", "The directory to save downloaded files")
-	numWorkers := flag.Int("workers", 4, "Number of worker processes")
+	numWorkers := flag.Int("workers", 4, "Number of worker processes (for Playwright instances)")
 	flag.Parse()
 
 	if *targetURL == "" {
 		log.Fatal("Error: Please provide the target URL using the -url flag.")
 	}
 
-	// Create output directory if it doesn't exist
+	// Create output directory
 	err := os.MkdirAll(*outputDir, 0755)
 	if err != nil {
 		log.Fatal("Error creating output directory:", err)
 	}
 
-	// Task queue and synchronization
-	taskQueue := queue.NewTaskQueue()
-	var wg sync.WaitGroup
-
-	// Start worker processes
-	for i := 0; i < *numWorkers; i++ {
-		wg.Add(1)
-		go worker(*outputDir, taskQueue, &wg)
-	}
-
-	// Seed the queue with the initial URL
-	baseURL, err := utils.NormalizeBaseURL(*targetURL)
+	// Initialize Playwright
+	pw, err := playwright.Run()
 	if err != nil {
-		log.Fatal("Error normalizing base URL:", err)
+		log.Fatalf("Could not start Playwright: %v", err)
 	}
-	taskQueue.Enqueue(queue.Task{URL: baseURL, Type: queue.TaskTypeDownload})
+	defer pw.Stop()
 
-	// Crawl the website
-	visited := make(map[string]bool)
-	for {
-		task, ok := taskQueue.Dequeue()
-		if !ok {
-			if taskQueue.IsEmpty() {
-				break // Queue is empty, crawling finished
-			}
-			time.Sleep(100 * time.Millisecond) // Wait a bit for new tasks
-			continue
+	// Browser pool for concurrent tasks
+	browsers := make(chan *playwright.Browser, *numWorkers)
+	for i := 0; i < *numWorkers; i++ {
+		browser, err := pw.Chromium.Launch()
+		if err != nil {
+			log.Fatalf("Could not launch browser: %v", err)
 		}
-
-		if visited[task.URL] {
-			continue // Already processed
-		}
-		visited[task.URL] = true
-
-		if task.Type == queue.TaskTypeDownload {
-			page, err := downloader.Download(task.URL)
-			if err != nil {
-				log.Printf("Error downloading %s: %v", task.URL, err)
-				continue
-			}
-
-			// Save the HTML to the output directory
-			filePath := utils.GetFilePath(*outputDir, task.URL, ".html")
-			err = downloader.Save(page, filePath)
-			if err != nil {
-				log.Printf("Error saving HTML for %s: %v", task.URL, err)
-				continue
-			}
-			fmt.Println("Downloaded:", task.URL)
-
-			// Enqueue PDF conversion task
-			taskQueue.Enqueue(queue.Task{URL: task.URL, Type: queue.TaskTypeConvert, FilePath: filePath})
-
-			// Find and enqueue new links
-			links := utils.ExtractLinks(page, baseURL)
-			for _, link := range links {
-				if !visited[link] {
-					taskQueue.Enqueue(queue.Task{URL: link, Type: queue.TaskTypeDownload})
-				}
-			}
-		}
+		browsers <- &browser
 	}
 
-	// Wait for workers to finish
-	wg.Wait()
-	fmt.Println("Documentation download and conversion complete.")
-}
+	// Crawl and download HTML with inline styles and Base64 images
+	var wg sync.WaitGroup
+	c := crawler.New(*targetURL, *outputDir, &wg, browsers)
+	c.Crawl()
+	wg.Wait() // Wait for crawling and downloading to complete
 
-// Worker function for processing tasks
-func worker(outputDir string, taskQueue *queue.TaskQueue, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for {
-		task, ok := taskQueue.Dequeue()
-		if !ok {
-			break // Queue is closed
-		}
-
-		if task.Type == queue.TaskTypeConvert {
-			pdfFilePath := utils.GetFilePath(outputDir, task.URL, ".pdf")
-			err := converter.ConvertToPDF(task.FilePath, pdfFilePath)
-			if err != nil {
-				log.Printf("Error converting to PDF %s: %v", task.URL, err)
-			} else {
-				fmt.Println("Converted to PDF:", task.URL)
-			}
-		}
+	// Combine all HTML files into one
+	combinedHTML, err := downloader.CombineHTMLFiles(*outputDir)
+	if err != nil {
+		log.Fatalf("Failed to combine HTML files: %v", err)
 	}
+
+	// Convert the combined HTML to a single PDF
+	combinedHTMLPath := filepath.Join(*outputDir, "combined.html")
+	err = os.WriteFile(combinedHTMLPath, []byte(combinedHTML), 0644)
+	if err != nil {
+		log.Fatalf("Failed to write combined HTML to file: %v", err)
+	}
+
+	browser := <-browsers
+	pdfPath := filepath.Join(*outputDir, "final.pdf")
+	err = downloader.ConvertToPDF(combinedHTMLPath, pdfPath, browser)
+	if err != nil {
+		log.Fatalf("Error converting to PDF: %v", err)
+	}
+
+	fmt.Println("Documentation downloaded and converted to a single PDF:", pdfPath)
 }
